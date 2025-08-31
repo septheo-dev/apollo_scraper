@@ -1,3 +1,6 @@
-beautifulsoup4==4.12.2
-pandas==2.0.3
-selenium==4.10.0
+# requirements.txt
+fastapi
+uvicorn
+selenium
+webdriver-manager
+pydantic

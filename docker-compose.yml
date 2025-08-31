@@ -1,0 +1,7 @@
+# docker-compose.yml
+services:
+  python-api:
+    build: .
+    container_name: python-api
+    ports:
+      - "8000:8000"
