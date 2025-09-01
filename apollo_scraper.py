@@ -109,48 +109,64 @@ class ApolloScraper:
             print("Attente de 2 secondes...")
             time.sleep(2)
 
-                       # --- NOUVELLE LOGIQUE D'EXTRACTION AVEC JSON STRUCTURÉ ---
+
+            # --- NOUVELLE LOGIQUE D'EXTRACTION AVEC PAGINATION ET JSON STRUCTURÉ ---
             print("Extraction des contacts de la page...")
             contacts = []
             
-            try:
-                # Attendre que la première ligne du tableau soit présente
-                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table-row-0")))
-            except:
-                print("Aucune ligne de résultats trouvée.")
-                return {
-                    "url": self.driver.current_url,
-                    "contacts": []
-                }
-            
-            # Boucle pour itérer sur chaque ligne du tableau
-            i = 0
             while True:
+                # Vérifier si la première ligne du tableau est présente
                 try:
-                    wait2 = WebDriverWait(self.driver, 3)
-                    # Construire les sélecteurs CSS pour le nom et le titre de poste
-                    name_selector = f"#table-row-{i} > div.zp_biVWr.zp_wDB4y > div:nth-child(2) > div > div > a"
-                    job_title_selector = f"#table-row-{i} > div:nth-child(2) > div > div > div.zp_YGDgt > span > span"
-
-                    # Attendre que les deux éléments soient présents et visibles
-                    name_element = wait2.until(EC.presence_of_element_located((By.CSS_SELECTOR, name_selector)))
-                    job_title_element = wait2.until(EC.presence_of_element_located((By.CSS_SELECTOR, job_title_selector)))
-                    
-                    # Créer un dictionnaire pour le contact actuel
-                    contact = {
-                        "id": i,
-                        "name": name_element.text,
-                        "job": job_title_element.text
-                    }
-                    contacts.append(contact)
-                    
-                    print(f"Extrait - ID: {contact['id']}, Nom: {contact['name']}, Titre: {contact['job']}")
-                    i += 1
+                    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table-row-0")))
                 except:
-                    # Si l'élément n'est pas trouvé (ou si une erreur se produit), cela signifie
-                    # que nous avons atteint la fin du tableau
-                    print("Fin de l'extraction. Plus de noms ou de titres de poste trouvés.")
+                    print("Aucune ligne de résultats trouvée.")
                     break
+                
+                # Boucle pour itérer sur chaque ligne du tableau
+                i = 0
+                while True:
+                    try:
+                        wait2 = WebDriverWait(self.driver, 3)
+                        # Construire les sélecteurs CSS pour le nom et le titre de poste
+                        name_selector = f"#table-row-{i} > div.zp_biVWr.zp_wDB4y > div:nth-child(2) > div > div > a"
+                        job_title_selector = f"#table-row-{i} > div:nth-child(2) > div > div > div.zp_YGDgt > span > span"
+
+                        # Attendre que les deux éléments soient présents et visibles
+                        name_element = wait2.until(EC.presence_of_element_located((By.CSS_SELECTOR, name_selector)))
+                        job_title_element = wait2.until(EC.presence_of_element_located((By.CSS_SELECTOR, job_title_selector)))
+                        
+                        # Créer un dictionnaire pour le contact actuel
+                        contact = {
+                            "id": len(contacts),
+                            "name": name_element.text,
+                            "job": job_title_element.text
+                        }
+                        contacts.append(contact)
+                        
+                        print(f"Extrait - ID: {contact['id']}, Nom: {contact['name']}, Titre: {contact['job']}")
+                        i += 1
+                    except:
+                        # Si l'élément n'est pas trouvé, cela signifie
+                        # que nous avons atteint la fin du tableau sur cette page
+                        print(f"Fin de l'extraction de la page. {i} contacts trouvés.")
+                        break
+
+                # Vérifier s'il y a 25 contacts sur la page (indice 0 à 24)
+                if i < 25:
+                    print("Moins de 25 contacts sur la page. Fin de la pagination.")
+                    break
+                
+                # Clic sur le bouton "next"
+                try:
+                    next_button_selector = "#main-container-column-2 > div > div > div > div.zp_p234g.people-finder-shell-container > div.zp_pxYrj > div.zp_lYmVV > div.zp_DhjQ0.zp_a7xaB > div > div.zp_l0qux > button:nth-child(4)"
+                    next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, next_button_selector)))
+                    next_button.click()
+                    print("Clic sur le bouton 'Suivant'. Attente du chargement de la nouvelle page.")
+                    time.sleep(3) # Laisser le temps à la page de charger
+                except:
+                    print("Bouton 'Suivant' non trouvé ou non cliquable. Fin de la pagination.")
+                    break
+
 
             print(f"✅ {len(contacts)} contacts extraits au total.")
                         
@@ -161,8 +177,6 @@ class ApolloScraper:
                 "url": current_url,
                 "contacts": contacts
             }
-            
-
             
         except Exception as e:
             print(f"Erreur lors du scraping: {e}")
