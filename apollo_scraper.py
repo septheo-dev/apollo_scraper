@@ -22,7 +22,7 @@ class ApolloScraper:
         firefox_options = Options()
         firefox_options.add_argument("--no-sandbox")
         firefox_options.add_argument("--disable-dev-shm-usage")
-        firefox_options.add_argument("--headless") # Added for running in a server environment
+        #firefox_options.add_argument("--headless") # Added for running in a server environment
         
         firefox_options.set_preference("dom.webdriver.enabled", False)
         firefox_options.set_preference('useAutomationExtension', False)
@@ -101,18 +101,68 @@ class ApolloScraper:
             # MODIFIED: Uses the company_domain parameter here
             actions.send_keys(company_domain)
             actions.perform()
-            time.sleep(5)
+            time.sleep(3)
             print("send return ...")
             actions.send_keys(Keys.RETURN)
             actions.perform()            
             
-            print("Attente de 10 secondes...")
-            time.sleep(10)
+            print("Attente de 2 secondes...")
+            time.sleep(2)
+
+                       # --- NOUVELLE LOGIQUE D'EXTRACTION AVEC JSON STRUCTURÉ ---
+            print("Extraction des contacts de la page...")
+            contacts = []
             
+            try:
+                # Attendre que la première ligne du tableau soit présente
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table-row-0")))
+            except:
+                print("Aucune ligne de résultats trouvée.")
+                return {
+                    "url": self.driver.current_url,
+                    "contacts": []
+                }
+            
+            # Boucle pour itérer sur chaque ligne du tableau
+            i = 0
+            while True:
+                try:
+                    wait2 = WebDriverWait(self.driver, 3)
+                    # Construire les sélecteurs CSS pour le nom et le titre de poste
+                    name_selector = f"#table-row-{i} > div.zp_biVWr.zp_wDB4y > div:nth-child(2) > div > div > a"
+                    job_title_selector = f"#table-row-{i} > div:nth-child(2) > div > div > div.zp_YGDgt > span > span"
+
+                    # Attendre que les deux éléments soient présents et visibles
+                    name_element = wait2.until(EC.presence_of_element_located((By.CSS_SELECTOR, name_selector)))
+                    job_title_element = wait2.until(EC.presence_of_element_located((By.CSS_SELECTOR, job_title_selector)))
+                    
+                    # Créer un dictionnaire pour le contact actuel
+                    contact = {
+                        "id": i,
+                        "name": name_element.text,
+                        "job": job_title_element.text
+                    }
+                    contacts.append(contact)
+                    
+                    print(f"Extrait - ID: {contact['id']}, Nom: {contact['name']}, Titre: {contact['job']}")
+                    i += 1
+                except:
+                    # Si l'élément n'est pas trouvé (ou si une erreur se produit), cela signifie
+                    # que nous avons atteint la fin du tableau
+                    print("Fin de l'extraction. Plus de noms ou de titres de poste trouvés.")
+                    break
+
+            print(f"✅ {len(contacts)} contacts extraits au total.")
+                        
             current_url = self.driver.current_url
             print(f"URL actuelle copiée: {current_url}")
             
-            return current_url
+            return {
+                "url": current_url,
+                "contacts": contacts
+            }
+            
+
             
         except Exception as e:
             print(f"Erreur lors du scraping: {e}")
