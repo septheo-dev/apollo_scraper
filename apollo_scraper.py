@@ -70,7 +70,7 @@ class ApolloScraper:
             if not cookies:
                 return None
             
-            target_url = "https://app.apollo.io/#/people?page=1&organizationLocations[]=Paris%2C%20France&prospectedByCurrentTeam[]=no&sortAscending=false&sortByField=recommendations_score&personTitles[]=it%20manager"
+            target_url = "https://app.apollo.io/#/people?page=1&personTitles[]=it%20manager&personLocations[]=Paris%2C%20France&prospectedByCurrentTeam[]=no&sortAscending=false&sortByField=recommendations_score"
             print(f"Navigation vers: {target_url}")
             self.driver.get(target_url)
             
@@ -122,28 +122,36 @@ class ApolloScraper:
                     print("Aucune ligne de résultats trouvée.")
                     break
                 
+                # Récupérer l'URL de la page actuelle pour l'inclure dans les données
+                current_url = self.driver.current_url
+
                 # Boucle pour itérer sur chaque ligne du tableau
                 i = 0
                 while True:
                     try:
-                        wait2 = WebDriverWait(self.driver, 3)
                         # Construire les sélecteurs CSS pour le nom et le titre de poste
                         name_selector = f"#table-row-{i} > div.zp_biVWr.zp_wDB4y > div:nth-child(2) > div > div > a"
                         job_title_selector = f"#table-row-{i} > div:nth-child(2) > div > div > div.zp_YGDgt > span > span"
 
                         # Attendre que les deux éléments soient présents et visibles
-                        name_element = wait2.until(EC.presence_of_element_located((By.CSS_SELECTOR, name_selector)))
-                        job_title_element = wait2.until(EC.presence_of_element_located((By.CSS_SELECTOR, job_title_selector)))
+                        name_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, name_selector)))
+                        job_title_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, job_title_selector)))
+                        
+                        # Récupérer le lien associé au nom
+                        name_link = name_element.get_attribute('href')
                         
                         # Créer un dictionnaire pour le contact actuel
                         contact = {
                             "id": len(contacts),
                             "name": name_element.text,
-                            "job": job_title_element.text
+                            "name_link": name_link,
+                            "job_title": job_title_element.text,
+                            #"output_url": current_url,
+                            "company_domain": company_domain
                         }
                         contacts.append(contact)
                         
-                        print(f"Extrait - ID: {contact['id']}, Nom: {contact['name']}, Titre: {contact['job']}")
+                        print(f"Extrait - ID: {contact['id']}, Nom: {contact['name']}, Titre: {contact['job_title']}")
                         i += 1
                     except:
                         # Si l'élément n'est pas trouvé, cela signifie
@@ -170,13 +178,8 @@ class ApolloScraper:
 
             print(f"✅ {len(contacts)} contacts extraits au total.")
                         
-            current_url = self.driver.current_url
-            print(f"URL actuelle copiée: {current_url}")
-            
-            return {
-                "url": current_url,
-                "contacts": contacts
-            }
+            # Le retour final est une liste des contacts extraits
+            return contacts
             
         except Exception as e:
             print(f"Erreur lors du scraping: {e}")
@@ -193,10 +196,12 @@ class ApolloScraper:
 if __name__ == "__main__":
     cookies_file = "apollo_cookies.json"
     scraper = ApolloScraper(cookies_file)
-    result_url = scraper.scrape_apollo("suez.com") # Example call
+    result = scraper.scrape_apollo("suez.com") # Exemple d'appel
     
-    if result_url:
+    if result:
         print(f"\n✅ Scraping terminé avec succès!")
-        print(f"URL finale: {result_url}")
+        print(f"\nListe des contacts:")
+        # Utiliser un dictionnaire pour un affichage plus lisible si le résultat est une liste d'objets
+        print(json.dumps(result, indent=2))
     else:
         print("\n❌ Échec du scraping")
