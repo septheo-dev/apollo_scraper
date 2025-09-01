@@ -22,7 +22,7 @@ class ApolloScraper:
         firefox_options = Options()
         firefox_options.add_argument("--no-sandbox")
         firefox_options.add_argument("--disable-dev-shm-usage")
-        #firefox_options.add_argument("--headless") # Added for running in a server environment
+        firefox_options.add_argument("--headless") # Added for running in a server environment
         
         firefox_options.set_preference("dom.webdriver.enabled", False)
         firefox_options.set_preference('useAutomationExtension', False)
@@ -62,23 +62,25 @@ class ApolloScraper:
                 print(f"Erreur lors de l'ajout du cookie {cookie.get('name', 'inconnu')}: {e}")
                 continue
     
-    # MODIFIED: Accepts a 'company_domain' parameter
-    def scrape_apollo(self, company_domain: str):
-        try:
+    def _initialize_driver_and_cookies(self):
+        """Initializes the driver and sets cookies if not already done."""
+        if self.driver is None:
             self.setup_driver()
             cookies = self.load_cookies()
-            if not cookies:
-                return None
+            if cookies:
+                self.driver.get("https://app.apollo.io")
+                self.set_cookies(cookies)
+                self.driver.refresh()
+            else:
+                raise Exception("Cookies could not be loaded.")
+
+    def scrape_apollo(self, company_domain: str):
+        try:
+            self._initialize_driver_and_cookies()
             
-            target_url = "https://app.apollo.io/#/people?page=1&personTitles[]=it%20manager&personLocations[]=Paris%2C%20France&prospectedByCurrentTeam[]=no&sortAscending=false&sortByField=recommendations_score"
+            target_url = "https://app.apollo.io/#/people?page=1&organizationLocations[]=Paris%2C%20France&prospectedByCurrentTeam[]=no&sortAscending=false&sortByField=recommendations_score&personTitles[]=it%20manager"
             print(f"Navigation vers: {target_url}")
             self.driver.get(target_url)
-            
-            print("Chargement des cookies...")
-            self.set_cookies(cookies)
-            
-            print("Rechargement de la page pour activer la session...")
-            self.driver.refresh()
             
             wait = WebDriverWait(self.driver, 15)
             
@@ -87,28 +89,29 @@ class ApolloScraper:
             first_element = wait.until(EC.element_to_be_clickable((By.XPATH, first_element_xpath)))
             first_element.click()
             
-            time.sleep(1)
+            # --- MODIFIÉ : Attente explicite pour le chargement du champ de recherche ---
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".Select-placeholder")))
             
             print("Clic sur le deuxième élément (le placeholder)...")
             placeholder_css = ".Select-placeholder"
-            second_element = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, placeholder_css)))
+            second_element = self.driver.find_element(By.CSS_SELECTOR, placeholder_css)
             second_element.click()
             
             print(f"Envoi des touches pour le domaine: {company_domain}...")
-            time.sleep(2)
 
             actions = ActionChains(self.driver)
-            # MODIFIED: Uses the company_domain parameter here
             actions.send_keys(company_domain)
             actions.perform()
-            time.sleep(3)
+            
+            # --- MODIFIÉ : Attente pour la suggestion de domaine avant d'appuyer sur Entrée ---
+            wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(text(), '" + company_domain + "')]")))
             print("send return ...")
             actions.send_keys(Keys.RETURN)
             actions.perform()            
             
-            print("Attente de 2 secondes...")
-            time.sleep(2)
-
+            # --- MODIFIÉ : Attente explicite du rechargement de la page après l'action ---
+            wait.until(EC.staleness_of(second_element))
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table-row-0")))
 
             # --- NOUVELLE LOGIQUE D'EXTRACTION AVEC PAGINATION ET JSON STRUCTURÉ ---
             print("Extraction des contacts de la page...")
@@ -146,7 +149,7 @@ class ApolloScraper:
                             "name": name_element.text,
                             "name_link": name_link,
                             "job_title": job_title_element.text,
-                            #"output_url": current_url,
+                            "output_url": current_url,
                             "company_domain": company_domain
                         }
                         contacts.append(contact)
@@ -175,33 +178,115 @@ class ApolloScraper:
                     print("Bouton 'Suivant' non trouvé ou non cliquable. Fin de la pagination.")
                     break
 
-
             print(f"✅ {len(contacts)} contacts extraits au total.")
-                        
-            # Le retour final est une liste des contacts extraits
             return contacts
             
         except Exception as e:
             print(f"Erreur lors du scraping: {e}")
             screenshot_path = "screenshot.png"
-            self.driver.save_screenshot(screenshot_path)
-            print(f"Screenshot saved to {screenshot_path}")
+            if self.driver:
+                self.driver.save_screenshot(screenshot_path)
+                print(f"Screenshot saved to {screenshot_path}")
             return None
         
-        finally:
-            if self.driver:
-                self.driver.quit()
+    def get_email(self, profile_url: str):
+        """
+        Navigue vers une URL de profil et tente d'extraire l'adresse e-mail.
+        """
+        try:
+            self._initialize_driver_and_cookies()
+            time.sleep(2)
+            self.driver.get(profile_url)
+            wait = WebDriverWait(self.driver, 7)
 
-# This part is no longer needed for the API but can be kept for testing
+            print(f"Navigating to profile URL: {profile_url}")
+            
+
+            # Clic sur le bouton pour révéler l'e-mail
+            try:
+                email_button_xpath = '/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div[2]/div[1]/div[1]/div/div/div[1]/div/div/div[2]/div[1]/div[2]/button'
+                email_button = wait.until(EC.presence_of_element_located((By.XPATH, email_button_xpath)))
+                email_button.click()
+                time.sleep(1) # Attendre que l'e-mail apparai2sse
+
+            except Exception:
+                # Extraire l'adresse e-mail
+                try:
+
+                    print("Bouton non trouvé, on extrait l'e-mail directement")
+                    email_selector = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div/div[1]/div[1]/div/div/div/div[2]/div/div/div[1]/div/div/div[2]/div/div/div[1]/div/div/div/div/div/div[1]/a"
+                    email_element = wait.until(EC.presence_of_element_located((By.XPATH, email_selector)))
+                    email = email_element.text
+                    print(f"✅ E-mail extrait: {email}")
+                    return {"status": "success", "email": email}
+
+                except Exception as e:
+
+                    print(f"Erreur lors de l'extraction de l'e-mail: {e}")
+                    # --- NOUVEAU: Capture d'écran pour le débogage ---2
+                    screenshot_path = "email_error_screenshot.png"
+                    if self.driver:
+                        self.driver.save_screenshot(screenshot_path)
+                        print(f"Screenshot saved to {screenshot_path}")
+                        
+                    raise e
+
+
+
+            # Extraire l'adresse e-mail
+            email_selector = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div/div[1]/div[1]/div/div/div/div[2]/div/div/div[1]/div/div/div[2]/div/div/div[1]/div/div/div/div/div/div[1]/a"
+            email_element = wait.until(EC.presence_of_element_located((By.XPATH, email_selector)))
+            email = email_element.text
+            
+            print(f"✅ E-mail extrait: {email}")
+            return {"status": "success", "email": email}
+
+        except Exception as e:
+            print(f"Erreur lors de l'extraction de l'e-mail: {e}")
+            
+            # --- NOUVEAU: Capture d'écran pour le débogage ---
+            screenshot_path = "email_error_screenshot.png"
+            if self.driver:
+                self.driver.save_screenshot(screenshot_path)
+                print(f"Screenshot saved to {screenshot_path}")
+                
+            raise e
+
+    def quit_driver(self):
+        """Quits the WebDriver instance."""
+        if self.driver:
+            self.driver.quit()
+            self.driver = None
+
 if __name__ == "__main__":
     cookies_file = "apollo_cookies.json"
     scraper = ApolloScraper(cookies_file)
-    result = scraper.scrape_apollo("suez.com") # Exemple d'appel
     
-    if result:
-        print(f"\n✅ Scraping terminé avec succès!")
-        print(f"\nListe des contacts:")
-        # Utiliser un dictionnaire pour un affichage plus lisible si le résultat est une liste d'objets
-        print(json.dumps(result, indent=2))
+    print("Choisissez une action :")
+    print("1) Scraper des contacts (scrape_apollo)")
+    print("2) Récupérer un e-mail (get_email)")
+    choice = input("Entrez 1 ou 2: ").strip()
+
+    if choice == "1":
+        domain = input("Entrez le domaine de l'entreprise (ex: example.com): ").strip()
+        if domain:
+            result_contacts = scraper.scrape_apollo(domain)
+            if result_contacts:
+                print("\n✅ Scraping terminé avec succès!")
+                print("\nListe des contacts:")
+                print(json.dumps(result_contacts, indent=2))
+            else:
+                print("\n❌ Aucun contact trouvé ou erreur lors du scraping.")
+        else:
+            print("\n❌ Domaine invalide.")
+    elif choice == "2":
+        profile_url = "https://app.apollo.io/#/people/6724c639258ded000196ec08?overrideScoreId=score"
+        if profile_url:
+            email_result = scraper.get_email(profile_url)
+            print(json.dumps(email_result, indent=2))
+        else:
+            print("\n❌ URL de profil invalide.")
     else:
-        print("\n❌ Échec du scraping")
+        print("\n❌ Choix invalide. Veuillez relancer et entrer 1 ou 2.")
+    
+    scraper.quit_driver()
