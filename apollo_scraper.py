@@ -67,8 +67,11 @@ class ApolloScraper:
         if self.driver is None:
             self.setup_driver()
             cookies = self.load_cookies()
+            
             if cookies:
                 self.driver.get("https://app.apollo.io")
+                self.driver.maximize_window()
+                self.driver.set_window_size(1920, 1080)
                 self.set_cookies(cookies)
                 self.driver.refresh()
             else:
@@ -78,14 +81,14 @@ class ApolloScraper:
         try:
             self._initialize_driver_and_cookies()
             
-            target_url = "https://app.apollo.io/#/people?page=1&organizationLocations[]=Paris%2C%20France&prospectedByCurrentTeam[]=no&sortAscending=false&sortByField=recommendations_score&personTitles[]=it%20manager"
+            target_url = "https://app.apollo.io/#/people?page=1&personTitles[]=it%20manager&personTitles[]=project%20manager&personTitles[]=talent%20acquisition&personTitles[]=rh&personTitles[]=senior&personTitles[]=developer&personTitles[]=ceo&personTitles[]=cto&personTitles[]=business%20manager&personTitles[]=ingenieur%20d%27affaires&prospectedByCurrentTeam[]=no&sortAscending=false&sortByField=recommendations_score&uniqueUrlId=4rhKtweaXd"
             print(f"Navigation vers: {target_url}")
             self.driver.get(target_url)
-            
-            wait = WebDriverWait(self.driver, 15)
+            self.driver.refresh()
+            wait = WebDriverWait(self.driver, 7)
             
             print("Clic sur le premier élément...")
-            first_element_xpath = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[2]/div[2]/div[1]/div/div/div[2]/div[5]/div"
+            first_element_xpath = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[3]/div[2]/div[1]/div/div/div[2]/div[5]/div"
             first_element = wait.until(EC.element_to_be_clickable((By.XPATH, first_element_xpath)))
             first_element.click()
             
@@ -94,7 +97,7 @@ class ApolloScraper:
             
             print("Clic sur le deuxième élément (le placeholder)...")
             placeholder_css = ".Select-placeholder"
-            second_element = self.driver.find_element(By.CSS_SELECTOR, placeholder_css)
+            second_element = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, placeholder_css)))
             second_element.click()
             
             print(f"Envoi des touches pour le domaine: {company_domain}...")
@@ -104,7 +107,7 @@ class ApolloScraper:
             actions.perform()
             
             # --- MODIFIÉ : Attente pour la suggestion de domaine avant d'appuyer sur Entrée ---
-            wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(text(), '" + company_domain + "')]")))
+            time.sleep(1.5)
             print("send return ...")
             actions.send_keys(Keys.RETURN)
             actions.perform()            
@@ -183,12 +186,52 @@ class ApolloScraper:
             
         except Exception as e:
             print(f"Erreur lors du scraping: {e}")
-            screenshot_path = "screenshot.png"
+            screenshot_path = f"screenshot_{time.time()}.png"
             if self.driver:
                 self.driver.save_screenshot(screenshot_path)
                 print(f"Screenshot saved to {screenshot_path}")
             return None
-        
+    def get_people_by_name(self, name: str):
+        """
+        Recherche des personnes par nom et retourne les résultats sous forme de dictionnaire.
+        """
+        try:
+            self._initialize_driver_and_cookies()
+            time.sleep(2)
+            self.driver.get(f"https://app.apollo.io/#/people?page=1&sortAscending=false&sortByField=recommendations_score&qKeywords={name.split(' ')[0]}%20{name.split(' ')[1]}")
+            wait = WebDriverWait(self.driver, 15)
+            people = []
+            while True:
+                try:
+                    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table-row-0")))
+                except:
+                    print("Aucune ligne de résultats trouvée.")
+                    break
+                i = 0
+                while True:
+                    try:
+                        name_selector = f"#table-row-{i} > div.zp_biVWr.zp_wDB4y > div:nth-child(2) > div > div > a"
+                        job_title_selector = f"#table-row-{i} > div:nth-child(2) > div > div > div.zp_YGDgt > span > span"
+                        name_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, name_selector)))
+                        job_title_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, job_title_selector)))
+                        name_link = name_element.get_attribute('href')
+                        person = {
+                            "id": len(people),
+                            "name": name_element.text,
+                            "name_link": name_link,
+                            "job_title": job_title_element.text
+                        }
+                        people.append(person)
+                        print(f"Extrait - ID: {person['id']}, Nom: {person['name']}, Titre: {person['job_title']}")
+                        i += 1
+                    except:
+                        print(f"Fin de l'extraction de la page. {i} personnes trouvées.")
+                        break
+            return people
+        except Exception as e:
+            print(f"Erreur lors de la recherche par nom: {e}")
+            raise e
+
     def get_email(self, profile_url: str):
         """
         Navigue vers une URL de profil et tente d'extraire l'adresse e-mail.
@@ -204,7 +247,7 @@ class ApolloScraper:
 
             # Clic sur le bouton pour révéler l'e-mail
             try:
-                email_button_xpath = '/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div[2]/div[1]/div[1]/div/div/div[1]/div/div/div[2]/div[1]/div[2]/button'
+                email_button_xpath = '/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div[1]/div/div[2]/div/div/div[1]/div[2]/div[1]/div[2]/button'
                 email_button = wait.until(EC.presence_of_element_located((By.XPATH, email_button_xpath)))
                 email_button.click()
                 time.sleep(1) # Attendre que l'e-mail apparai2sse
@@ -224,7 +267,7 @@ class ApolloScraper:
 
                     print(f"Erreur lors de l'extraction de l'e-mail: {e}")
                     # --- NOUVEAU: Capture d'écran pour le débogage ---2
-                    screenshot_path = "email_error_screenshot.png"
+                    screenshot_path = f"email_error_screenshot_{time.time()}.png"
                     if self.driver:
                         self.driver.save_screenshot(screenshot_path)
                         print(f"Screenshot saved to {screenshot_path}")
@@ -265,7 +308,8 @@ if __name__ == "__main__":
     print("Choisissez une action :")
     print("1) Scraper des contacts (scrape_apollo)")
     print("2) Récupérer un e-mail (get_email)")
-    choice = input("Entrez 1 ou 2: ").strip()
+    print("3) Récupérer des personnes par nom (get_people_by_name)")
+    choice = input("Entrez 1, 2 ou 3: ").strip()
 
     if choice == "1":
         domain = input("Entrez le domaine de l'entreprise (ex: example.com): ").strip()
@@ -286,6 +330,13 @@ if __name__ == "__main__":
             print(json.dumps(email_result, indent=2))
         else:
             print("\n❌ URL de profil invalide.")
+    elif choice == "3":
+        name = input("Entrez le nom de la personne (ex: John Doe): ").strip()
+        if name:
+            people_result = scraper.get_people_by_name(name)
+            print(json.dumps(people_result, indent=2))
+        else:
+            print("\n❌ Nom invalide.")
     else:
         print("\n❌ Choix invalide. Veuillez relancer et entrer 1 ou 2.")
     
