@@ -107,7 +107,7 @@ class ApolloScraper:
             actions.perform()
             
             # --- MODIFIÉ : Attente pour la suggestion de domaine avant d'appuyer sur Entrée ---
-            time.sleep(1.5)
+            time.sleep(3)
             print("send return ...")
             actions.send_keys(Keys.RETURN)
             actions.perform()            
@@ -138,6 +138,7 @@ class ApolloScraper:
                         # Construire les sélecteurs CSS pour le nom et le titre de poste
                         name_selector = f"#table-row-{i} > div.zp_biVWr.zp_wDB4y > div:nth-child(2) > div > div > a"
                         job_title_selector = f"#table-row-{i} > div:nth-child(2) > div > div > div.zp_YGDgt > span > span"
+                        email_selector = f"#table-row-{i} > div:nth-child(4) > div > span > button"
 
                         # Attendre que les deux éléments soient présents et visibles
                         name_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, name_selector)))
@@ -145,6 +146,21 @@ class ApolloScraper:
                         
                         # Récupérer le lien associé au nom
                         name_link = name_element.get_attribute('href')
+
+                        # Trouver le bouton de l'e-mail et vérifier son attribut
+                        email_present = False
+                        try:
+                            email_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, email_selector)))
+                            
+                            # On vérifie la valeur de l'attribut data-tour-id
+                            data_tour_id = email_button.get_attribute("data-tour-id")
+                            
+                            if data_tour_id == "email-cell-verified":
+                                email_present = True
+                            
+                        except:
+                            # Si le bouton n'est même pas présent, l'e-mail n'est pas vérifié
+                            pass
                         
                         # Créer un dictionnaire pour le contact actuel
                         contact = {
@@ -153,11 +169,13 @@ class ApolloScraper:
                             "name_link": name_link,
                             "job_title": job_title_element.text,
                             "output_url": current_url,
-                            "company_domain": company_domain
+                            "company_domain": company_domain,
+                            "email_verified": email_present  # Utilisation d'un nom de champ plus précis
+
                         }
                         contacts.append(contact)
                         
-                        print(f"Extrait - ID: {contact['id']}, Nom: {contact['name']}, Titre: {contact['job_title']}")
+                        print(f"Extrait - ID: {contact['id']}, Nom: {contact['name']}, Titre: {contact['job_title']}, Email vérifié: {contact['email_verified']}")
                         i += 1
                     except:
                         # Si l'élément n'est pas trouvé, cela signifie
@@ -238,8 +256,8 @@ class ApolloScraper:
         """
         try:
             self._initialize_driver_and_cookies()
-            time.sleep(2)
             self.driver.get(profile_url)
+            self.driver.refresh()
             wait = WebDriverWait(self.driver, 7)
 
             print(f"Navigating to profile URL: {profile_url}")
@@ -257,7 +275,7 @@ class ApolloScraper:
                 try:
 
                     print("Bouton non trouvé, on extrait l'e-mail directement")
-                    email_selector = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div/div[1]/div[1]/div/div/div/div[2]/div/div/div[1]/div/div/div[2]/div/div/div[1]/div/div/div/div/div/div[1]/a"
+                    email_selector = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/div/div[2]/div[1]/div[1]/div[1]/div/div[2]/div/div/div[1]/div[2]/div/div/div[1]/div/div/div[2]/div/div/div[1]/div/div/div/div/div/div[1]/a"
                     email_element = wait.until(EC.presence_of_element_located((By.XPATH, email_selector)))
                     email = email_element.text
                     print(f"✅ E-mail extrait: {email}")
@@ -277,7 +295,7 @@ class ApolloScraper:
 
 
             # Extraire l'adresse e-mail
-            email_selector = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div/div[1]/div[1]/div/div/div/div[2]/div/div/div[1]/div/div/div[2]/div/div/div[1]/div/div/div/div/div/div[1]/a"
+            email_selector = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/div/div[2]/div[1]/div[1]/div[1]/div/div[2]/div/div/div[1]/div[2]/div/div/div[1]/div/div/div[2]/div/div/div[1]/div/div/div/div/div/div[1]/a"
             email_element = wait.until(EC.presence_of_element_located((By.XPATH, email_selector)))
             email = email_element.text
             
