@@ -85,7 +85,7 @@ class ApolloScraper:
             print(f"Navigation vers: {target_url}")
             self.driver.get(target_url)
             self.driver.refresh()
-            wait = WebDriverWait(self.driver, 7)
+            wait = WebDriverWait(self.driver, 5)
             
             print("Clic sur le premier élément...")
             first_element_xpath = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[3]/div[2]/div[1]/div/div/div[2]/div[5]/div"
@@ -99,6 +99,7 @@ class ApolloScraper:
             placeholder_css = ".Select-placeholder"
             second_element = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, placeholder_css)))
             second_element.click()
+            time.sleep(0.5)
             
             print(f"Envoi des touches pour le domaine: {company_domain}...")
 
@@ -111,14 +112,53 @@ class ApolloScraper:
             print("send return ...")
             actions.send_keys(Keys.RETURN)
             actions.perform()            
+            blocking_element_xpath = "/html/body/div[2]/div/div[2]/div[2]/div/div[2]/div/div[2]/div/div/div/div/div[3]/div[2]/div[2]/div/div/div/div/div/div"
+            button_if_blocked_selector = "#main-container-column-2 > div > div > div > div.zp_p234g.people-finder-shell-container.people-finder-shell-empty-state-shown > div.zp_pxYrj > div.zp_FWOdG > div > div > div.zp_pDn5b.zp_T8qTB.zp_w3MDk > div:nth-child(4) > div.zp-accordion-header.zp_r3aQ1.zp_JoE0E > span > button"
+
+
+            try:
+                # On essaie de trouver directement la table de résultats
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table-row-0")))
+            except:
+                # Si la table n'est pas là, on vérifie si c'est à cause de l'élément bloquant
+                blocking_elements = self.driver.find_elements(By.XPATH, blocking_element_xpath)
+
+                if len(blocking_elements) > 0:
+                    print("Élément bloquant détecté. Tentative de clic sur le bouton pour continuer...")
+                    try:
+                        button_to_click = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, button_if_blocked_selector)))
+                        button_to_click.click()
+                        print("Clic sur le bouton de contournement effectué. Attente du chargement des résultats...")
+                        # On attend que la table apparaisse après le clic
+                        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table-row-0")))
+                    except Exception as e:
+                        # Si le clic échoue, on lève une exception pour arrêter proprement
+                        screenshot_path = f"screenshot_{time.time()}.png"
+                        if self.driver:
+                            self.driver.save_screenshot(screenshot_path)
+                            print(f"Screenshot saved to {screenshot_path}")
+                        raise Exception(f"Impossible de cliquer sur le bouton de contournement. Erreur: {e}")
+                else:
+                    # AMÉLIORATION : Si la table ET l'élément bloquant sont absents, on arrête.
+                    print("ERREUR : La table de résultats est absente, et l'élément bloquant connu n'a pas été trouvé non plus.")
+                    screenshot_path = f"screenshot_{time.time()}.png"
+                    if self.driver:
+                        self.driver.save_screenshot(screenshot_path)
+                        print(f"Screenshot saved to {screenshot_path}")
+                    raise Exception("État de la page inconnu, impossible de continuer le scraping.")
+
             
+            # --- FIN DE LA NOUVELLE LOGIQUE ---
+
+
             # --- MODIFIÉ : Attente explicite du rechargement de la page après l'action ---
-            wait.until(EC.staleness_of(second_element))
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table-row-0")))
+            
+            
 
             # --- NOUVELLE LOGIQUE D'EXTRACTION AVEC PAGINATION ET JSON STRUCTURÉ ---
             print("Extraction des contacts de la page...")
             contacts = []
+            CONTACT_LIMIT = 100
             
             while True:
                 # Vérifier si la première ligne du tableau est présente
@@ -130,6 +170,21 @@ class ApolloScraper:
                 
                 # Récupérer l'URL de la page actuelle pour l'inclure dans les données
                 current_url = self.driver.current_url
+                company1_XPATH = f"#table-row-0 > div:nth-child(3) > div > div > div > span > div > div > div > div.zp_PaniY > a > span"
+                company2_XPATH = f"#table-row-1 > div:nth-child(3) > div > div > div > span > div > div > div > div.zp_PaniY > a > span"
+
+                company1_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, company1_XPATH)))
+                company2_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, company2_XPATH)))
+                if company1_element.text != company2_element.text:
+                    print("company1_element.text != company2_element.text")
+                    screenshot_path = f"screenshot_{time.time()}.png"
+                    if self.driver:
+                        self.driver.save_screenshot(screenshot_path)
+                        print(f"Screenshot saved to {screenshot_path}")
+                    raise Exception("company1_element.text != company2_element.text")
+                    
+                    
+                
 
                 # Boucle pour itérer sur chaque ligne du tableau
                 i = 0
@@ -144,6 +199,9 @@ class ApolloScraper:
                         name_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, name_selector)))
                         job_title_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, job_title_selector)))
                         
+                            
+                        
+                            
                         # Récupérer le lien associé au nom
                         name_link = name_element.get_attribute('href')
 
@@ -155,7 +213,7 @@ class ApolloScraper:
                             # On vérifie la valeur de l'attribut data-tour-id
                             data_tour_id = email_button.get_attribute("data-tour-id")
                             
-                            if data_tour_id == "email-cell-verified":
+                            if data_tour_id == "email-cell-verified" or data_tour_id == "email-cell-unverified":
                                 email_present = True
                             
                         except:
@@ -173,7 +231,9 @@ class ApolloScraper:
                             "email_verified": email_present  # Utilisation d'un nom de champ plus précis
 
                         }
-                        contacts.append(contact)
+                        if email_present == True:
+                            contacts.append(contact)
+                        
                         
                         print(f"Extrait - ID: {contact['id']}, Nom: {contact['name']}, Titre: {contact['job_title']}, Email vérifié: {contact['email_verified']}")
                         i += 1
@@ -182,6 +242,9 @@ class ApolloScraper:
                         # que nous avons atteint la fin du tableau sur cette page
                         print(f"Fin de l'extraction de la page. {i} contacts trouvés.")
                         break
+                if len(contacts) >= CONTACT_LIMIT:
+                    print(f"Limite de {CONTACT_LIMIT} contacts atteinte. Arrêt de la pagination.")
+                    break # Sort de la boucle externe (pagination)
 
                 # Vérifier s'il y a 25 contacts sur la page (indice 0 à 24)
                 if i < 25:
@@ -209,6 +272,8 @@ class ApolloScraper:
                 self.driver.save_screenshot(screenshot_path)
                 print(f"Screenshot saved to {screenshot_path}")
             return None
+    
+    
     def get_people_by_name(self, name: str):
         """
         Recherche des personnes par nom et retourne les résultats sous forme de dictionnaire.
@@ -247,6 +312,10 @@ class ApolloScraper:
                         break
             return people
         except Exception as e:
+            screenshot_path = f"screenshot_{time.time()}.png"
+            if self.driver:
+                self.driver.save_screenshot(screenshot_path)
+                print(f"Screenshot saved to {screenshot_path}")
             print(f"Erreur lors de la recherche par nom: {e}")
             raise e
 
@@ -306,18 +375,20 @@ class ApolloScraper:
             print(f"Erreur lors de l'extraction de l'e-mail: {e}")
             
             # --- NOUVEAU: Capture d'écran pour le débogage ---
-            screenshot_path = "email_error_screenshot.png"
+            screenshot_path = f"email_error_screenshot_{time.time()}.png"
             if self.driver:
                 self.driver.save_screenshot(screenshot_path)
                 print(f"Screenshot saved to {screenshot_path}")
                 
             raise e
 
+
     def quit_driver(self):
         """Quits the WebDriver instance."""
         if self.driver:
             self.driver.quit()
             self.driver = None
+
 
 if __name__ == "__main__":
     cookies_file = "apollo_cookies.json"
